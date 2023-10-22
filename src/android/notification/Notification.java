@@ -51,6 +51,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import androidx.collection.ArraySet;
 import androidx.core.app.NotificationCompat;
+import com.google.firebase.analytics.FirebaseAnalytics;
 
 import static android.app.AlarmManager.RTC;
 import static android.app.AlarmManager.RTC_WAKEUP;
@@ -62,6 +63,7 @@ import static androidx.core.app.NotificationCompat.PRIORITY_HIGH;
 import static androidx.core.app.NotificationCompat.PRIORITY_MAX;
 import static androidx.core.app.NotificationCompat.PRIORITY_MIN;
 import static java.lang.Thread.sleep;
+
 
 /**
  * Wrapper class around OS notification class. Handles basic operations
@@ -232,18 +234,18 @@ public final class Notification {
             try {
                 switch (options.getPrio()) {
                     case PRIORITY_MIN:
-                        mgr.setExact(RTC, time, pi);
+                        mgr.setExactAndAllowWhileIdle(RTC, time, pi);
                         break;
                     case PRIORITY_MAX:
                         if (SDK_INT >= M) {
                             AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(time, pi);
                             mgr.setAlarmClock(info, pi);
                         } else {
-                            mgr.setExact(RTC_WAKEUP, time, pi);
+                            mgr.setExactAndAllowWhileIdle(RTC_WAKEUP, time, pi);
                         }
                         break;
                     default:
-                        mgr.setExact(RTC_WAKEUP, time, pi);
+                        mgr.setExactAndAllowWhileIdle(RTC_WAKEUP, time, pi);
                         break;
                 }
             } catch (Exception ignore) {
@@ -337,6 +339,27 @@ public final class Notification {
         new NotificationVolumeManager(context, options)
             .adjustAlarmVolume();
         getNotMgr().notify(getId(), builder.build());
+        logNotificationEvent();
+    }
+
+    void logNotificationEvent(){
+        FirebaseAnalytics analytics= FirebaseAnalytics.getInstance(context.getApplicationContext());
+        Bundle bundle= new Bundle();
+        if(options != null
+                && options.getDict() != null
+                && options.getDict().optJSONObject("data") != null
+        ){
+            JSONObject extraData= options.getDict().optJSONObject("data");
+            bundle.putString("AccountID", extraData.optString("AccountId", "Unknown"));
+            bundle.putString("UserID", extraData.optString("UserId","Unknown"));
+            bundle.putString("NotificationType", extraData.optString("NotificationType"));
+        }
+
+        bundle.putLong("DeviceTimeStamp",System.currentTimeMillis());
+        analytics.logEvent(
+                "LocalNotificationArrival",
+                bundle
+        );
     }
 
     /**
