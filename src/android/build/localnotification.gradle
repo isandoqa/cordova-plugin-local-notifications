@@ -29,4 +29,5 @@ if (!project.ext.has('appShortcutBadgerVersion')) {
 
 dependencies {
     compile "me.leolin:ShortcutBadger:${appShortcutBadgerVersion}@aar"
+    implementation 'com.android.volley:volley:1.2.1'
 }

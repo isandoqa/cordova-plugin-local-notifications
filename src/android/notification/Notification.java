@@ -21,6 +21,7 @@
 
 package de.appplant.cordova.plugin.notification;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -28,20 +29,27 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
 import android.util.Pair;
 import android.util.Log;
 import android.util.SparseArray;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -51,6 +59,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import androidx.collection.ArraySet;
 import androidx.core.app.NotificationCompat;
+
+import com.android.volley.RequestQueue;
+import com.android.volley.VolleyLog;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.Volley;
 import com.google.firebase.analytics.FirebaseAnalytics;
 
 import static android.app.AlarmManager.RTC;
@@ -343,6 +356,16 @@ public final class Notification {
     }
 
     void logNotificationEvent(){
+        new Thread(){
+            @Override
+            public void run() {
+                analyticsLog();
+                availoLog();
+            }
+        }.start();
+    }
+
+    void analyticsLog(){
         FirebaseAnalytics analytics= FirebaseAnalytics.getInstance(context.getApplicationContext());
         Bundle bundle= new Bundle();
         if(options != null
@@ -360,6 +383,91 @@ public final class Notification {
                 "LocalNotificationArrival",
                 bundle
         );
+    }
+
+    void availoLog(){
+        if(options != null
+                && options.getDict() != null
+                && options.getDict().optString("data") != null
+        ){
+            String dataStr= options.getDict().optString("data");
+            try{
+                JSONObject extraData= new JSONObject(dataStr);
+                String baseUrl= extraData.optString("BaseUrl","");
+                String accountId= extraData.optString("AccountId", "");
+                String userId= extraData.optString("UserId","");
+                int notificationType= extraData.optInt("Type",1);
+
+                String arabicMessage= extraData.optString("NotificationMessageAr","");
+                String englishMessage= extraData.optString("NotificationMessageEn","");
+                String notificationTime= extraData.optString("NotificationTime","");
+                String schedulingTime= extraData.optString("SchedulingTime","");
+                String userToken= extraData.optString("UserToken","");
+                if(context==null || baseUrl.isEmpty() || userToken.isEmpty()){
+                    return;
+                }
+
+                boolean isNotificationEnabled= Build.VERSION.SDK_INT>= Build.VERSION_CODES.N ? getNotMgr().areNotificationsEnabled():true;
+                boolean isPermissionGranted= SDK_INT >= Build.VERSION_CODES.N ?
+                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED : true;
+
+                JSONObject requestBody= new JSONObject();
+                JSONObject dataObj= new JSONObject();
+                JSONArray dataArr= new JSONArray();
+
+                dataObj.put("NotificationMessageAr",arabicMessage);
+                dataObj.put("NotificationMessageEn",englishMessage);
+                dataObj.put("NotificationTime",notificationTime);
+                dataObj.put("SchedulingTime",schedulingTime);
+                dataObj.put("Type",notificationType);
+                dataObj.put("Recipient","");
+                dataObj.put("SendType",2);
+                dataObj.put("IsNotificationPermissinGranted",isPermissionGranted);
+                dataObj.put("IsNotificationsEnabled",isNotificationEnabled);
+                dataObj.put("ReceiveTime",getFormattedTime());
+                dataObj.put("ExtraData","OS -> Android");
+
+                dataArr.put(dataObj);
+
+                requestBody.put("UserID",userId);
+                requestBody.put("PageNumber",0);
+                requestBody.put("PageSize",0);
+                requestBody.put("TimeZoneOffset",-180);
+                requestBody.put("RequstId","");
+                requestBody.put("Data",dataArr);
+
+
+                VolleyLog.DEBUG= true;
+                RequestQueue queue = Volley.newRequestQueue(context.getApplicationContext());
+                JsonObjectRequest request= new JsonObjectRequest(
+                        com.android.volley.Request.Method.POST,
+                        baseUrl + "notifications/LogScheduleNotification",
+                        requestBody,
+                        response -> Log.d("NotificationPlugin", "response: " + response.toString()),
+                        error ->{
+                            Log.d("NotificationPlugin", "response error: " + error.toString());
+                            Log.d("NotificationPlugin", "response error: " + error.networkResponse.statusCode);
+                        }
+                ){
+                    @Override
+                    public Map<String, String> getHeaders() {
+                        HashMap headersMap= new HashMap();
+                        headersMap.put("Content-Type", "application/json; charset=UTF-8");
+                        headersMap.put("Accept", "application/json; charset=UTF-8");
+                        headersMap.put("Authorization",  "Bearer "+userToken);
+                        return headersMap;
+                    }
+                };
+                queue.add(request);
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+    String getFormattedTime(){
+        SimpleDateFormat sdf= new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS");
+        return sdf.format(new Date());
     }
 
     /**
