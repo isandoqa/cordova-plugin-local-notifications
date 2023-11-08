@@ -466,7 +466,7 @@ public final class Notification {
     }
 
     String getFormattedTime(){
-        SimpleDateFormat sdf= new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS");
+        SimpleDateFormat sdf= new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
         return sdf.format(new Date());
     }
 
